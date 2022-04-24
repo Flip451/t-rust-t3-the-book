@@ -42,7 +42,7 @@ $ rust --version
 
 ### ローカルのドキュメンテーション
 ```sh
-$ rust doc
+$ rustup doc
 ```
 - デフォルトでは動作しなかったので調査・対応
 - [WSL2でRustドキュメントを開く](https://osanshouo.github.io/blog/2021/04/09-rustdoc-wls/) を参考に対応
@@ -56,6 +56,7 @@ $ rust doc
      ```bashrc
      export BROWSER=/home/flip451/settings/browser.sh
      ```
+  - VSCode のターミナルからの呼び出しにうまく反応しなかったので、設定から `Open-in-browser: Default` に `/home/flip451/settings/browser.sh` を設定した
 
 ## 1.2 Hello, world!
 1. mkdir
