@@ -17,6 +17,14 @@
       - [文字列をスライスする](#文字列をスライスする)
     - [文字列を走査するメソッド群](#文字列を走査するメソッド群)
   - [8.3 キーとそれに紐づいた値をハッシュマップに格納する](#83-キーとそれに紐づいた値をハッシュマップに格納する)
+    - [定義](#定義)
+    - [所有権との関係](#所有権との関係-1)
+    - [ハッシュマップの値にアクセスする](#ハッシュマップの値にアクセスする)
+    - [ハッシュマップを更新する](#ハッシュマップを更新する)
+      - [値を上書きする(`insert`)](#値を上書きするinsert)
+      - [キーに値がなかった時のみ値を挿入する(`entry` + `or_insert`)](#キーに値がなかった時のみ値を挿入するentry--or_insert)
+      - [古い値に基づいて値を更新する(HashMap の使用例)](#古い値に基づいて値を更新するhashmap-の使用例)
+    - [ハッシュ関数](#ハッシュ関数)
 
 ## 8.0 概要
 - コレクションが指すデータはヒープに確保される
@@ -265,4 +273,156 @@
   ```
 
 ## 8.3 キーとそれに紐づいた値をハッシュマップに格納する
-- aaa
+- 型 `HashMap<K, V>` は、`K` 型のキーと `V` 型の値の対応関係を保持
+- 最初に標準ライブラリのコレクション部分から `HashMap` を `use` する必要がある
+- ハッシュマップはデータをヒープに保持
+- キーは全て同じ型でなけばならず、値も全て同じ型でなければならない
+
+### 定義
+- 空のハッシュマップを new で作り、要素を insert で追加
+  ```rust
+  use std::collections::HashMap;
+
+  fn main() {
+      let mut scores = HashMap::new();
+
+      scores.insert(String::from("Blue"), 10);
+      scores.insert(String::from("Yellow"), 50);
+
+      println!("{:?}", scores);
+  }
+  ```
+  ```sh
+  {"Yellow": 50, "Blue": 10}
+  ```
+
+- タプルのベクタに対して `collect` メソッドを使用する
+  - `collect` メソッドは iterable なものなら何でも受け取り、関連するコレクションに変換することができる([ref](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.collect))
+  - 変換先は様々な型がありうるので、型注釈が必要となることが多い
+  - 下の例では、`zip` メソッドを使ってタプルのベクタを作り上げ
+  - それを `collect` メソッドでをハッシュマップに変換している
+  - この例では `HashMap<_, _>` という型注釈が必要になる（この注釈で十分に型が特定できる）
+    ```rust
+    use std::collection::HashMap;
+
+    let teams = vec![String::from("Blue"), String::from("Yellow")];
+    let initial_scores = vec![10, 50];
+
+    let scores: HashMap<_, _> = teams.iter().zip(initial_scores.iter()).collect();
+    println!("{:?}", scores);
+    ```
+    ```sh
+    {"Blue": 10, "Yellow": 50}
+    ```
+
+### 所有権との関係
+- i32 のような Copy トレイトを実装する型について、値はハッシュマップにコピーされる
+- 一方で、`String` のような所有権のある値なら、値はムーブされて、所有権はハッシュマップに移る
+- もちろん、値への参照をハッシュマップに挿入しても、値はハッシュマップにムーブされない
+  ```rust
+  use std::collection::HashMap;
+
+  let field_name = String::from("Favorite color");
+  let field_value = String::from("Red");
+
+  let mut map = HashMap::new();
+  map.insert(field_name, field_value);  // この時点で String::from で生成して、もともと field_name, field_value が持っていた
+                                        // ヒープデータの所有権がに map に移動する
+  ```
+- 参照が指している値は、最低でもハッシュマップが有効な間は、有効でなければならない
+- この問題はライフタイムで解決される
+
+### ハッシュマップの値にアクセスする
+- `get` メソッドに提供することで、ハッシュマップから値を取り出すことができる
+- `HashMap<K, V>.get` は `Option<&V>` を返す
+  - `get` メソッドの引数に渡したキーに対応する値がハッシュマップになかったら、`get` は `None` を返す
+  ```rust
+  use std::collection::HashMap;
+
+  let mut scores = HashMap::new();
+
+  scores.insert(String::from("Blue"), 10);
+  scores.insert(String::from("Yellow"), 50);
+
+  let team_name = String::from("Blue");
+  let score:Option<&i32> = scores.get(&team_name);
+
+  println!("{:?}", score);
+  ```
+  ```sh
+  Some(10)
+  ```
+
+- for ループでハッシュマップのキーと値のペアを走査する
+  - 出力順は決定的でないので注意
+  ```rust
+  use std::collections::HashMap;
+  
+  let mut scores = HashMap::new();
+  
+  scores.insert(String::from("Blue"), 10);
+  scores.insert(String::from("Yellow"), 50);
+  
+  for (key, value) in &scores {
+    println!("{}: {}", key, value);
+  }
+  ```
+  ```sh
+  Blue: 10
+  Yellow: 50
+  ```
+
+### ハッシュマップを更新する
+#### 値を上書きする(`insert`)
+- `insert` メソッドは値を上書きする
+  ```rust
+  use std::collections::HashMap;
+  let mut scores = HashMap::new();
+
+  scores.insert(String::from("Blue"), 10);
+  scores.insert(String::from("Blue"), 25);
+
+  println!("{:?}",scores);
+  ```
+  ```sh
+  {"Blue": 25}
+  ```
+#### キーに値がなかった時のみ値を挿入する(`entry` + `or_insert`)
+- `entry` メソッドを使って、特定のキーに値があるか確認できる
+- `entry` メソッドは `Entry` という enum を返す
+- `Entry` 型には、`or_insert` メソッドが定義されている
+- `or_insert` メソッドは 
+  - `Entry` 値が「指定したキーに値が存在することを表すもの」であれば、そのキーに対する値への可変参照を返し
+  - `Entry` 値が「指定したキーに値が存在しないことを表すもの」であれば、引数をこのキーの新しい値として挿入し、新しい値への可変参照を返す
+  ```rust
+  let mut scores = HashMap::new();
+  scores.insert(String::from("Blue"), 10);
+  
+  scores.entry(String::from("Yellow")).or_insert(50);
+  scores.entry(String::from("Blue")).or_insert(50);
+
+  println!("{:?}", scores);
+  ```
+  ```sh
+  {"Blue": 10, "Yellow": 50}
+  ```
+
+#### 古い値に基づいて値を更新する(HashMap の使用例)
+```rust
+use std::collections::HashMap;
+
+let text = "hello world wonderful world";
+
+let mut map = HashMap::new();
+
+for word in text.split_whitespace() {
+  let count = map.entry(word).or_insert(0);
+  *count += 1;
+}
+
+println!("{:?}", map);
+```
+
+### ハッシュ関数
+- 使用するハッシュ関数は切り替え可能
+
