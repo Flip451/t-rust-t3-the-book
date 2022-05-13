@@ -1,3 +1,11 @@
+/* 実装中の調査内容についてのメモ
+ * 文字列を空白区切りで 文字列スライス配列に変換する方法については
+ *  [Magidropack’s blog](https://magidropack.hatenablog.com/entry/2018/12/20/161840#chapter02)
+ * を参考にした
+ * 結論：`split_whitespace` メソッドと、`collect` メソッドを組み合わせればよい
+ * 
+ */
+
 use std::collections::HashMap;
 use std::io;
 

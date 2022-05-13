@@ -1,3 +1,24 @@
+/* 実装中の調査内容についてのメモ
+ * ベクタのソートについては [Rust Cookbook](https://rust-lang-nursery.github.io/rust-cookbook/algorithms/sorting.html) を参照
+ * 
+ * マージソートの実装に関しては、「アルゴリズムx数学」の本を参考にして、紙のノートにソートの原理もメモした
+ * 
+ * 
+ * - iterable は奥が深そう。iterable を学習した後に改めて戻って読み返したい
+ * - 整数同士の割り算を実数同士の割り算として実行したいときのコードの書き方はこんなにダサくてもいいのか？
+ * - slpit_vector の実装はもっとスマートにならないか？（chunks メソッド を使用するとよいかも？）
+ *  - [std::slice.chunks](https://doc.rust-lang.org/std/primitive.slice.html#method.chunks)
+ *  - drain_filter を使いたかったが、コンパイラが許してくれなかったので断念（github に issue として挙がっていた）
+ *    - [drain_filter についてはこちらから...](https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#method.drain_filter)
+ *  - [split_at_spare_mut](https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#method.split_at_spare_mut) も使えそう？
+ *  
+ * - マージソートで検索して他の人のコードから学びを得るとよさそう
+ *  - https://chercher.tech/rust/merge-sort-rust
+ *  - https://dev.to/felixfaisal/implementing-merge-sort-in-rust-4ko8
+ *  - https://qiita.com/jlkiri/items/f0bb8b1fa9da3bfc68ee
+ *  - etc.
+ */
+
 use std::collections::HashMap;
 
 fn main() {
