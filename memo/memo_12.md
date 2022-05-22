@@ -22,6 +22,17 @@
       - [run 関数からエラーを返す](#run-関数からエラーを返す)
       - [main で run から返ってきたエラーを処理する](#main-で-run-から返ってきたエラーを処理する)
     - [コードをライブラリクレートに分割する](#コードをライブラリクレートに分割する)
+  - [12.4 テスト駆動開発でライブラリの機能を開発する](#124-テスト駆動開発でライブラリの機能を開発する)
+    - [失敗するテストを記述する](#失敗するテストを記述する)
+    - [テストを通過させるコードを書く](#テストを通過させるコードを書く)
+    - [run 関数内で search 関数を使用する](#run-関数内で-search-関数を使用する)
+  - [12.5 環境変数を取り扱う](#125-環境変数を取り扱う)
+    - [大文字小文字を区別しない search 関数用に失敗するテストを書く](#大文字小文字を区別しない-search-関数用に失敗するテストを書く)
+    - [`search_case_insensitive` 関数を実装する](#search_case_insensitive-関数を実装する)
+    - [run 関数から新しい search_case_insensitive 関数を呼び出す](#run-関数から新しい-search_case_insensitive-関数を呼び出す)
+  - [12.6 標準出力ではなく標準エラーにエラーメッセージを書き込む](#126-標準出力ではなく標準エラーにエラーメッセージを書き込む)
+    - [標準出力の中身を画面の代わりにファイルに書き込む(ファイルにリダイレクトする)](#標準出力の中身を画面の代わりにファイルに書き込むファイルにリダイレクトする)
+    - [エラーを標準エラーに出力する](#エラーを標準エラーに出力する)
 
 ## 12.0 概要
 - aaa
@@ -258,7 +269,7 @@ To an admiring bog!
 
 ### 3. & 4. エラー処理を修正する
 #### 渡す引数の数が少なければパニックを起こさせる
-- `Congih::new` 関数に、添え字 1 と 2 にアクセスする前にスライスが十分長いことを実証するチェックを追加
+- `Config::new` 関数に、添え字 1 と 2 にアクセスする前にスライスが十分長いことを実証するチェックを追加
   **`src/lib.rs`**
   ```diff
   pub struct Config<'a> {
@@ -525,3 +536,482 @@ impl<'a> Config<'a> {
 +     Ok(())
 + }
 ```
+
+## 12.4 テスト駆動開発でライブラリの機能を開発する
+### 失敗するテストを記述する
+**`src/lib.rs`**
+```rust
+// --snip--
+
+pub struct Config<'a> {
+    // --snip--
+}
+
+impl<'a> Config<'a> {
+    pub fn new(args: &Vec<String>) -> Result<Config, &'static str> {
+        // --snip--
+    }
+}
+
+pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
+    // --snip--
+}
+
+pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+    vec![]
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn one_result(){
+        let query = "duct";
+        let contents = "\
+Rust:
+safe, fast, productive.
+Pick three.";
+        assert_eq!(
+            vec!["safe, fast, productive."],
+            search(query, contents)
+        )
+    }
+}
+```
+- test の実行結果
+  - テストは全く想定通りに失敗する
+```sh
+$ cargo test
+   Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
+
+--snip--
+
+running 1 test
+test test::one_result ... FAILED
+
+failures:
+
+---- test::one_result stdout ----
+thread 'test::one_result' panicked at 'assertion failed: `(left == right)`
+  left: `["safe, fast, productive."]`,
+ right: `[]`', src/lib.rs:49:9
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    test::one_result
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass '--lib'
+```
+
+### テストを通過させるコードを書く
+- 文字列を行ごとに繰り返すメソッド `lines` メソッドを使う
+  - `lines` メソッドはイテレータを返す
+- ある文字列がクエリ文字列を含むか確認するために、`contains` メソッドを使う
+
+**`src/lib.rs`**
+```rust
+// --snip--
+
+pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+    let mut result: Vec<&str>= Vec::new();
+
+    for line in contents.lines() {
+        if line.contains(query) {
+            result.push(line);
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn one_result(){
+        let query = "duct";
+        let contents = "\
+Rust:
+safe, fast, productive.
+Pick three.";
+        assert_eq!(
+            vec!["safe, fast, productive."],
+            search(query, contents)
+        )
+    }
+}
+```
+- test を実行する
+  - 期待通りに通る：
+```sh
+$ cargo test
+   Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
+    Finished test [unoptimized + debuginfo] target(s) in 0.37s
+     Running unittests (target/debug/deps/minigrep-662cb87b3d895995)
+
+running 1 test
+test test::one_result ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests (target/debug/deps/minigrep-33abce92ed029d2f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests minigrep
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+### run 関数内で search 関数を使用する
+**`src/lib.rs`**
+```diff
+pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
+    let mut f = File::open(config.filename)?;
+    
+    let mut contents = String::new();
+    f.read_to_string(&mut contents)?;
+
+-   println!("With text:\n{}", contents);
++   for line in search(config.query, &contents) {
++       println!("{}", line);
++   }
+
+    Ok(())
+}
+```
+
+- プログラムを実行してみる：
+```sh
+$ cargo run frog poem.txt
+   Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.36s
+     Running `target/debug/minigrep frog poem.txt`
+Searching for frog
+In file poem.txt
+How public, like a frog
+```
+```sh
+$ cargo run body poem.txt
+    Finished dev [unoptimized + debuginfo] target(s) in 0.00s
+     Running `target/debug/minigrep body poem.txt`
+Searching for body
+In file poem.txt
+I'm nobody! Who are you?
+Are you nobody, too?
+How dreary to be somebody!
+```
+```sh
+$ cargo run monomorphization poem.txt
+    Finished dev [unoptimized + debuginfo] target(s) in 0.00s
+     Running `target/debug/minigrep monomorphization poem.txt`
+Searching for monomorphization
+In file poem.txt
+```
+
+## 12.5 環境変数を取り扱う
+環境変数でユーザがオンにできる大文字小文字無視の検索用のオプションを追加する
+### 大文字小文字を区別しない search 関数用に失敗するテストを書く
+- 環境変数がオンの場合に呼び出す search_case_insensitive 関数を新しく追加
+  - テストモジュールを以下のように書き換える：
+
+**`src/lib.rs`**
+```rust
+pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+    let mut result: Vec<&str>= Vec::new();
+
+    for line in contents.lines() {
+        if line.contains(query) {
+            result.push(line);
+        }
+    }
+    result
+}
+
+pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+    vec![]
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn case_sensitive(){
+        let query = "duct";
+        let contents = "\
+Rust:
+safe, fast, productive.
+Pick three.
+Duct tape.";
+        assert_eq!(
+            vec!["safe, fast, productive."],
+            search(query, contents)
+        )
+    }
+
+    #[test]
+    fn case_insensitive(){
+        let query = "rUsT";
+        let contents = "\
+Rust:
+safe, fast, productive.
+Pick three.
+Trust me.";
+        assert_eq!(
+            vec!["Rust:", "Trust me."],
+            search(query, contents)
+        )
+    }
+}
+```
+- テストを実行：
+  - 期待通り失敗する
+```sh
+$ cargo test
+   Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
+
+--snip--
+
+running 2 tests
+test test::case_insensitive ... FAILED
+test test::case_sensitive ... ok
+
+failures:
+
+---- test::case_insensitive stdout ----
+thread 'test::case_insensitive' panicked at 'assertion failed: `(left == right)`
+  left: `["Rust:", "Trust me."]`,
+ right: `[]`', src/lib.rs:77:9
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    test::case_insensitive
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass '--lib'
+```
+
+### `search_case_insensitive` 関数を実装する
+- `to_lowercase` メソッドで `query` と各 `line` を小文字化
+
+**`src/lib.rs`**
+```rust
+pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+    let mut result: Vec<&str> = Vec::new();
+    let query = query.to_lowercase();
+
+    for line in contents.lines() {
+        if line.to_lowercase().contains(&query) {
+            result.push(line);
+        }
+    }
+    result
+}
+```
+- テストを実行する
+  - 期待通り成功する
+```sh
+$ cargo test
+   Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
+    Finished test [unoptimized + debuginfo] target(s) in 0.39s
+     Running unittests (target/debug/deps/minigrep-662cb87b3d895995)
+
+running 2 tests
+test test::case_insensitive ... ok
+test test::case_sensitive ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests (target/debug/deps/minigrep-33abce92ed029d2f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests minigrep
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+### run 関数から新しい search_case_insensitive 関数を呼び出す
+- `Config` 構造体に設定オプションを追加
+
+**`src/lib.rs`**
+```diff
+pub struct Config {
+    pub query: String,
+    pub filename: String,
++   pub case_sensitive: bool,
+}
+```
+
+- `run` 関数に、`case_sensitive` フィールドの値を確認し、`search` 関数 `search_case_insensitive` 関数を呼ぶかを決定してもらう
+```diff
+pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
+    let mut f = File::open(config.filename)?;
+
+    let mut contents = String::new();
+    f.read_to_string(&mut contents)?;
+
++   let results = if config.case_sensitive {
++       search(&config.query, &contents)
++   } else {
++       search_case_insensitive(&config.query, &contents)
++   };
+
+-   for line in search(config.query, &contents) {
++   for line in results {
+        println!("{}", line);
+    }
+
+    Ok(())
+}
+```
+
+- `new` メソッドを修正する
+  - 環境変数を扱う関数は、標準ライブラリの `env` モジュールにある
+    - `use std::env;` する必要がある
+  - `env` モジュールから `var` 関数を使用して `CASE_INSENSITIVE` という環境変数のチェックを行う
+    - `env::var` 関数は、環境変数がセットされていたら、環境変数の値を含む `Ok` 列挙子の成功値になる `Result` を返す
+    - 環境変数がセットされていなければ、`Err` 列挙子を返す
+  - ここでは、`Result` enum の `is_err` メソッドを使用して、
+    - `CASE_INSENSITIVE` 環境変数がセットされていなければ `true`
+    - `CASE_INSENSITIVE` 環境変数がセットされていれば `false` を返すようにしている
+```diff
+impl<'a> Config<'a> {
+    pub fn new(args: &Vec<String>) -> Result<Config, &'static str> {
+        if args.len() < 3 {
+            return Err("not enough arguments!");
+        }
+
+        let query = &args[1];
+        let filename = &args[2];
+
++       let case_sensitive = env::var("CASE_INSENSITIVE").is_err();
+
+-       Ok(Config { query, filename })
++       Ok(Config { query, filename, case_sensitive })
+    }
+}
+```
+- 実行してみる
+```sh
+$ cargo run to poem.txt
+   Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.26s
+     Running `target/debug/minigrep to poem.txt`
+Searching for to
+In file poem.txt
+Are you nobody, too?
+How dreary to be somebody!
+```
+```sh
+$ export CASE_INSENSITIVE=1
+$ echo $CASE_INSENSITIVE
+1
+
+$ cargo run to poem.txt
+    Finished dev [unoptimized + debuginfo] target(s) in 0.00s
+     Running `target/debug/minigrep to poem.txt`
+Searching for to
+In file poem.txt
+Are you nobody, too?
+How dreary to be somebody!
+To tell your name the livelong day
+To an admiring bog!
+```
+
+## 12.6 標準出力ではなく標準エラーにエラーメッセージを書き込む
+- 多くの端末は、2種類の出力を提供する: 
+  - 普通の情報用の標準出力 (stdout) と
+  - エラーメッセージ用の標準エラー出力 (stderr)
+- ユーザは、エラーメッセージを画面に表示しつつ、プログラムの成功した出力をファイルにリダイレクトすることを選択できる
+- `println!` は標準出力にしか出力する能力がない
+
+### 標準出力の中身を画面の代わりにファイルに書き込む(ファイルにリダイレクトする)
+- `>` 記法により、標準出力の中身を画面の代わりに `output.txt` に書き込む
+  - この時、エラーの内容は
+```sh
+$ cargo run > output.txt
+   Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.27s
+     Running `target/debug/minigrep`
+```
+**`output.txt`**
+```txt
+Problem parsing arguments: not enough arguments!
+
+```
+
+### エラーを標準エラーに出力する
+- `src/main.rs` を編集する：
+  - 表示エラー出力に出力したい部分を `eprintln!` マクロに置き換える
+
+**`src/main.rs`**
+```diff
+use std::env;
+use std::process;
+
+extern crate minigrep;
+use minigrep::Config;
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    let config = Config::new(&args).unwrap_or_else(|err| {
+-       println!("Problem parsing arguments: {}", err);
++       eprintln!("Problem parsing arguments: {}", err);
+        process::exit(1);
+    });
+
+    println!("Searching for {}", config.query);
+    println!("In file {}", config.filename);
+
+    if let Err(e) = minigrep::run(config) {
+-       println!("Application error: {}", e);
++       eprintln!("Application error: {}", e);
+        process::exit(1);
+    }
+}
+```
+- 実行してみる（エラーを起こす場合）：
+```sh
+$ cargo run > output.txt
+   Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.25s
+     Running `target/debug/minigrep`
+Problem parsing arguments: not enough arguments!
+```
+
+**`output.txt`**
+```txt
+
+```
+- 実行してみる（エラーを起こさない場合）：
+```sh
+$ cargo run to poem.txt > output.txt
+    Finished dev [unoptimized + debuginfo] target(s) in 0.00s
+     Running `target/debug/minigrep to poem.txt`
+```
+**`output.txt`**
+```txt
+Searching for to
+In file poem.txt
+Are you nobody, too?
+How dreary to be somebody!
+
+```
+
