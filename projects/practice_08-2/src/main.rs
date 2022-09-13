@@ -31,7 +31,7 @@ fn main() {
 
     let first = word.as_bytes()[0];
 
-    let vowels = [b'a', b'e', b'i', b'o', b'o'];
+    let vowels = [b'a', b'e', b'i', b'u', b'o'];
     
     let result:String = match vowels.binary_search(&first) {
         Ok(_) => {
