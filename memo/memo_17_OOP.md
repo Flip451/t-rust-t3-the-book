@@ -16,7 +16,8 @@
     - [草稿の記事の内容は空であることを保証する](#草稿の記事の内容は空であることを保証する)
     - [記事の査読を要求すると、状態が変化する](#記事の査読を要求すると状態が変化する)
     - [`content` の振る舞いを変化させる `approve` メソッドを追加する](#content-の振る舞いを変化させる-approve-メソッドを追加する)
-    - [ステートパターンの代償](#ステートパターンの代償)
+  - [17.3.6 ステートパターンの代償](#1736-ステートパターンの代償)
+    - [状態と振る舞いを型としてコード化する](#状態と振る舞いを型としてコード化する)
 
 ## 17.0 概要
 
@@ -455,7 +456,7 @@
   }
   ```
 
-### ステートパターンの代償
+## 17.3.6 ステートパターンの代償
 
 - ここまでに記述してきたように、Rust ではオブジェクト指向パターンを実装することができる（今回の例ではステートパターン）
 
@@ -481,3 +482,74 @@
     - 実装の重複を避けるために、`request_review` と `approve` メソッドに `self` を返すデフォルト実装を追加したくなるが、そうすると `State` がオブジェクト安全でなくなるため `State` をトレイトオブジェクトとして利用できなくなる
     - `Post` の `request_review`, `approve`, `reject` メソッドの実装が似ている
       - このパターンの実装が多ければ、一応マクロを定義して対応できる
+
+### 状態と振る舞いを型としてコード化する
+
+- ステートパターンを放棄して状態を型として実装することで Rust の型検査システムを活用することができる
+  - ただし、カプセル化による恩恵は受けられなくなる
+
+- つまり、以下のようなシンプルな実装が可能：
+  - この実装であれば、（草稿をレビューを経ずに受理してしまうなどの）不正な操作がコンパイルエラーで防がれる
+
+  **`src/main.rs`**
+
+  ```rust
+  extern crate example_17_03;
+  use example_17_03::Post;
+
+  fn main() {
+      let mut post = Post::new();
+
+      post.add_text("I ate a salad for lunch today");
+      // assert_eq!("", post.content());
+
+      let post = post.request_review();
+      // assert_eq!("", post.content());
+
+      let post = post.approve();
+
+      assert_eq!("I ate a salad for lunch today", post.content());
+  }
+  ```
+
+  **`src/lib.rs`**
+
+  ```rust
+  pub struct Post {
+      content: String,
+  }
+
+  impl Post {
+      pub fn new() -> DraftPost {
+          DraftPost { content: String::new() }
+      }
+
+      pub fn content(&self) -> &str {
+          &self.content
+      } 
+  }
+
+  pub struct DraftPost {
+      content: String,
+  }
+
+  impl DraftPost {
+      pub fn add_text(&mut self, text: &str) {
+          self.content.push_str(text);
+      }
+
+      pub fn request_review(self) -> PendingReviewPost {
+          PendingReviewPost { content: self.content }
+      }
+  }
+
+  pub struct PendingReviewPost {
+      content: String,
+  }
+
+  impl PendingReviewPost {
+      pub fn approve(self) -> Post {
+          Post { content: self.content }
+      }
+  }
+  ```
