@@ -540,4 +540,79 @@
 
 ### マッチガードで追加の条件式
 
+- **マッチガード**：`match` アーム中のパターンの直後に `if` 条件式を追記することで、そのアームが選択されるのに必要な条件を追加できる
+  - 例：
+
+    ```rust
+    fn main() {
+        let num = Some(4);
+
+        match num {
+            Some(x) if x % 2 == 0 => println!("The number {} is even", x),
+            Some(x) => println!("The number {} is odd", x),
+            None => (),
+        }
+    }
+    ```
+
+- 通常 `match` アームのパターン内で、`match` 式の外の変数を参照しようとしても、新しい変数が作成されるだけでうまくいかない
+- しかし、マッチガードを使うことで、`match` 式の外部の変数とパターンで取得した変数の比較などが可能になる
+  - 例：
+
+    ```rust
+    fn main() {
+        let x = Some(5);
+        let y = 10;
+
+        match x {
+            Some(50) => println!("Got 50"),
+            // Some(y) => println!("Matched, y = {y}"),
+            // のように書くと、このアームだけで有効な局所的なスコープ内で新しい変数 `y` が定義されるだけなので注意
+            Some(n) if n == y => println!("Matched, n = {n}"),
+            _ => println!("Default case, x = {:?}", x),
+        }
+
+        println!("at the end: x = {:?}, y = {y}", x);
+    }
+    ```
+
+- マッチガードと or 演算子の `|` を組合わせるとき、マッチガードの条件式は `|` で並列されたすべてのパターンに適用されることに注意
+  - たとえば、`4 | 5 | 6 if y` は `(4 | 5 | 6) if y` のような挙動をする
+  - 例：以下のコードは `no` と出力する
+
+    ```rust
+    fn main() {
+        let x = 4;
+        let y = false;
+
+        match x {
+            4 | 5 | 6 if y => println!("yes"),  // x の値が 4, 5, 6 のいずれかに等しく、かつ y が true の場合だけにアームがマッチする
+            _ => println!("no"),
+        }
+    }
+    ```
+
 ### `@` 束縛
+
+- `at` 演算子 `@` により、**パターン中で変数を生成するのと同時に、その値が（`@` 後に記述した）パターンに一致するかを検証できる**
+- 例：
+
+  ```rust
+  fn main() {
+      enum Message {
+          Hello { id: i32 },
+      }
+
+      let msg = Message::Hello { id: 5 };
+
+      match msg {
+          Message::Hello {
+              id: id_variable @ 3..=7,  // `id` の値が 3 以上 7 以下であることを検証しつつ、その値を `id_variable` に収められる
+          } => println!("Found an id in range: {}", id_variable),
+          Message::Hello { id: 10..=12 } => {  // この書き方では、`id` が 10 以上 12 以下であることしか確かめられない（`id` という変数に値は保存されない）
+              println!("Found an id in another range")
+          }
+          Message::Hello { id } => println!("Found some other id: {}", id),
+      }
+  }
+  ```
