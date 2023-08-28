@@ -1,6 +1,5 @@
 # 12章：入出力プロジェクト: コマンドラインプログラムを構築する
 
-
 ## 目次
 
 - [12章：入出力プロジェクト: コマンドラインプログラムを構築する](#12章入出力プロジェクト-コマンドラインプログラムを構築する)
@@ -12,10 +11,10 @@
   - [12.2 ファイルを読み込む](#122-ファイルを読み込む)
   - [12.3 リファクタリングしてモジュール性とエラー処理を向上させる](#123-リファクタリングしてモジュール性とエラー処理を向上させる)
     - [リファクタリングの概要](#リファクタリングの概要)
-    - [1. & 2. バイナリプロジェクトの責任の分離](#1--2-バイナリプロジェクトの責任の分離)
+    - [1. \& 2. バイナリプロジェクトの責任の分離](#1--2-バイナリプロジェクトの責任の分離)
       - [引数解析器を抽出する](#引数解析器を抽出する)
       - [Config のコンストラクタを作成する](#config-のコンストラクタを作成する)
-    - [3. & 4. エラー処理を修正する](#3--4-エラー処理を修正する)
+    - [3. \& 4. エラー処理を修正する](#3--4-エラー処理を修正する)
       - [渡す引数の数が少なければパニックを起こさせる](#渡す引数の数が少なければパニックを起こさせる)
       - [`panic!` を呼び出す代わりに `new` から `Result` を返す](#panic-を呼び出す代わりに-new-から-result-を返す)
       - [main からロジックを抽出する](#main-からロジックを抽出する)
@@ -29,21 +28,28 @@
   - [12.5 環境変数を取り扱う](#125-環境変数を取り扱う)
     - [大文字小文字を区別しない search 関数用に失敗するテストを書く](#大文字小文字を区別しない-search-関数用に失敗するテストを書く)
     - [`search_case_insensitive` 関数を実装する](#search_case_insensitive-関数を実装する)
-    - [run 関数から新しい search_case_insensitive 関数を呼び出す](#run-関数から新しい-search_case_insensitive-関数を呼び出す)
+    - [run 関数から新しい search\_case\_insensitive 関数を呼び出す](#run-関数から新しい-search_case_insensitive-関数を呼び出す)
   - [12.6 標準出力ではなく標準エラーにエラーメッセージを書き込む](#126-標準出力ではなく標準エラーにエラーメッセージを書き込む)
     - [標準出力の中身を画面の代わりにファイルに書き込む(ファイルにリダイレクトする)](#標準出力の中身を画面の代わりにファイルに書き込むファイルにリダイレクトする)
     - [エラーを標準エラーに出力する](#エラーを標準エラーに出力する)
 
 ## 12.0 概要
-- aaa
 
+- １～１１章までの内容のまとめとして、これまでの学習内容を踏まえたプログラムを作成する
+  - 作成するのは、コマンドラインツールの `grep` (globally search a regular expression and print: 正規表現をグローバルで検索し表示するプログラム)
+
+- `projects/minigrep` にて作成済み
 
 ## 12.1 コマンドライン引数を受け取る
+
 - create project
+
   ```sh
-  $ cargo new minigrep
+  cargo new minigrep
   ```
+
 ### `std::env::args` で引数を受け取る
+
 - この関数はコマンドライン引数のイテレータを返す
   - イテレータは一連の値を生成する
   - `collect` 関数を用いて、イテレータが生成する要素全部をコレクションに矯正できる
@@ -56,6 +62,7 @@ fn main() {
     println!("{:?}", args);
 }
 ```
+>
 > - 引数のどれかが不正なユニコードを含んでいたら、`std::env::args` はパニックする
 > - プログラムが不正なユニコードを含む引数を受け付ける必要があるなら、代わりに `std::env::args_os` を使用する
 >   - この関数は、`String` 値ではなく、`OsString` 値を生成するイテレータを返す
@@ -69,7 +76,7 @@ $ cargo run needle haystack
 ```
 
 ### 引数の値を変数に保存
-- 
+
 ```diff
 use std::env;
 
@@ -85,7 +92,9 @@ fn main() {
 ```
 
 ## 12.2 ファイルを読み込む
+
 - add `poem.txt`
+
   ```txt
   I'm nobody! Who are you?
   Are you nobody, too?
@@ -143,12 +152,16 @@ To an admiring bog!
 ```
 
 ## 12.3 リファクタリングしてモジュール性とエラー処理を向上させる
+
 ### リファクタリングの概要
+
 1. main 関数が複数の責任を受け持っているのでこれを分割するのが望ましい
-- 機能を小分けして、各関数が 1 つの仕事のみに責任を持つようにするのが最善
-   - ここでの複数の責任とは？以下の二つ：
-      - 引数を解析し
-      - ファイルを開いている
+
+   - 機能を小分けして、各関数が 1 つの仕事のみに責任を持つようにするのが最善
+     - ここでの複数の責任とは？以下の二つ：
+       - 引数を解析し
+       - ファイルを開いている
+
 2. 設定用変数を一つの構造に押し込め、目的を明瞭化するのが最善
    - スコープにある変数が増えれば、各々の目的を追うのも大変になるという問題への対処
 3. エラーハンドリングすべき
@@ -156,12 +169,12 @@ To an admiring bog!
 し、将来エラー処理ロジックが変更になった時に、メンテナンス者が 1 箇所のコードのみを考慮すればいいようにするのが最善
 
 ### 1. & 2. バイナリプロジェクトの責任の分離
+
 - main が肥大化し始めた際にバイナリプログラムの個別の責任を分割
 するためのガイドライン
-   - プログラムを `main.rs` と `lib.rs` に分け、**ロジックを `lib.rs` に移動**
-     - 解析ロジックが小規模な限り、`main.rs` に置いても良い
-     - 解析ロジックが複雑化の様相を呈し始めたら、`main.rs` から抽出して `lib.rs` に移動
-
+  - プログラムを `main.rs` と `lib.rs` に分け、**ロジックを `lib.rs` に移動**
+    - 解析ロジックが小規模な限り、`main.rs` に置いても良い
+    - 解析ロジックが複雑化の様相を呈し始めたら、`main.rs` から抽出して `lib.rs` に移動
 
 - この工程の後に `main` 関数に残る責任は以下に限定される:
   - 引数の値でコマンドライン引数の解析ロジックを呼び出す
@@ -170,7 +183,9 @@ To an admiring bog!
   - `run` がエラーを返した時に処理する
 
 #### 引数解析器を抽出する
+
 - **`src/main.rs`**
+
   ```diff
   use std::env;
   use std::fs::File;
@@ -200,7 +215,9 @@ To an admiring bog!
       println!("With text:\n{}", contents);
   }
   ```
+
   **`src/lib.rs`**
+
   ```rust
   pub struct Config<'a> {
       pub query: &'a String,
@@ -215,10 +232,11 @@ To an admiring bog!
   }
   ```
 
-
 #### Config のコンストラクタを作成する
+
 - `parse_config` をただの関数から `Config` 構造体に紐づく `new` という関数に変える
 - **`src/main.rs`**
+
   ```diff
   use std::env;
   use std::fs::File;
@@ -244,7 +262,9 @@ To an admiring bog!
       println!("With text:\n{}", contents);
   }
   ```
+
 - **`src/lib.rs`**
+
   ```diff
   pub struct Config<'a> {
       pub query: &'a String,
@@ -268,9 +288,12 @@ To an admiring bog!
   ```
 
 ### 3. & 4. エラー処理を修正する
+
 #### 渡す引数の数が少なければパニックを起こさせる
+
 - `Config::new` 関数に、添え字 1 と 2 にアクセスする前にスライスが十分長いことを実証するチェックを追加
   **`src/lib.rs`**
+
   ```diff
   pub struct Config<'a> {
       pub query: &'a String,
@@ -290,7 +313,9 @@ To an admiring bog!
       }
   }
   ```
+
 - このコードの実行時のエラー出力は、ユーザーに伝えたくない内容も含んでしまう...
+
   ```sh
   $ cargo run fas
     Finished dev [unoptimized + debuginfo] target(s) in 0.00s
@@ -300,12 +325,14 @@ To an admiring bog!
   ```
 
 #### `panic!` を呼び出す代わりに `new` から `Result` を返す
+
 - `new` メソッドの返り値の型を `Result` に変更する
 - `Reslut::unwrap_or_else` メソッドで `Result` 値が `Err` であるときに、引数に渡したクロージャを実行する
-- `std::process::exit` 関数でプロセスを終了する. 引数には終了コードを渡す. 
+- `std::process::exit` 関数でプロセスを終了する. 引数には終了コードを渡す.
   - 0 以外の終了コードは、我々のプログラムを呼び出したプロセスにプログラムがエラー状態で終了したことを通知する慣習
 
 **`src/main.rs`**
+
 ```diff
 use std::env;
 use std::fs::File;
@@ -337,6 +364,7 @@ fn main() {
 ```
 
 **`src/lib.rs`**
+
 ```diff
 pub struct Config<'a> {
     pub query: &'a String,
@@ -359,7 +387,9 @@ impl<'a> Config<'a> {
     }
 }
 ```
+
 - 実行結果：この出力の方が遥かにユーザに優しい
+
 ```sh
 $ cargo run fas
    Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
@@ -369,7 +399,9 @@ Problem parsing arguments: not enough arguments!
 ```
 
 #### main からロジックを抽出する
+
 **`src/main.rs`**
+
 ```diff
 use std::env;
 use std::fs::File;
@@ -405,13 +437,17 @@ fn main() {
 ```
 
 #### run 関数からエラーを返す
+
 - `run` 関数内で `expect` を呼び出してプログラムにパニックさせる代わりに、`Rusult` 型のエラー値を返す
-  - `?` 演算子を使うことで `Result` が `Err` 値を持つときにその `Err` 値を `return` することができる<br/>（詳しくは9章の `### エラー委譲のショートカット: ?演算子` を参照のこと）
+  - `?` 演算子を使うことで `Result` が `Err` 値を持つときにその `Err` 値を `return` することができる
+
+    （詳しくは9章の `エラー委譲のショートカット: ?演算子` を参照のこと）
 - `Box<dyn Error>` は、関数が `Error` トレイトを実装する型を返すことを意味する
   - 戻り値の型を具体的に指定しなくても良い
   - これにより、エラーケースによって異なる型のエラー値を返す柔軟性を得る
 
 **`src/main.rs`**
+
 ```diff
 // --snip--
 + use std::error::Error;
@@ -438,11 +474,13 @@ fn main() {
 ```
 
 #### main で run から返ってきたエラーを処理する
+
 - `if let` で `run` が `Err` 値を返したかどうかを確認し、そうなら `process::exit(1)` を呼び出す
   - `unwrap_or_else` を使わない理由は？
     - --> `run` 関数を使う際には、 `Config::new` とは異なり、返り値が `Ok(...)` であるときの `(...)` の中身に興味がないから
 
 **`src/main.rs`**
+
 ```diff
 // --snip--
 
@@ -461,6 +499,7 @@ fn run(config: Config) {
 ```
 
 ### コードをライブラリクレートに分割する
+
 - ライブラリの導入をよりそれらしい形にする（`extern crate` の使用）
   - 関数の導入時には、それを含むモジュールを導入し
   - 構造体などは、それ自体を導入するという慣習に従う
@@ -468,6 +507,7 @@ fn run(config: Config) {
 - `run` 関数を `src/lib.rs` に移動（それに伴って、`run` のみが依存するクレートに関する `use` 句も `src/lib.rs` に移動）
 
 **`src/main.rs`**
+
 ```diff
 use std::env;
 - use std::fs::File;
@@ -502,6 +542,7 @@ fn main() {
 ```
 
 **`src/lib.rs`**
+
 ```diff
 + use std::fs::File;
 + use std::io::prelude::*;
@@ -538,8 +579,11 @@ impl<'a> Config<'a> {
 ```
 
 ## 12.4 テスト駆動開発でライブラリの機能を開発する
+
 ### 失敗するテストを記述する
+
 **`src/lib.rs`**
+
 ```rust
 // --snip--
 
@@ -579,8 +623,10 @@ Pick three.";
     }
 }
 ```
+
 - test の実行結果
   - テストは全く想定通りに失敗する
+
 ```sh
 $ cargo test
    Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
@@ -608,11 +654,13 @@ error: test failed, to rerun pass '--lib'
 ```
 
 ### テストを通過させるコードを書く
+
 - 文字列を行ごとに繰り返すメソッド `lines` メソッドを使う
   - `lines` メソッドはイテレータを返す
 - ある文字列がクエリ文字列を含むか確認するために、`contains` メソッドを使う
 
 **`src/lib.rs`**
+
 ```rust
 // --snip--
 
@@ -645,8 +693,10 @@ Pick three.";
     }
 }
 ```
+
 - test を実行する
   - 期待通りに通る：
+
 ```sh
 $ cargo test
    Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
@@ -672,7 +722,9 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 
 ### run 関数内で search 関数を使用する
+
 **`src/lib.rs`**
+
 ```diff
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let mut f = File::open(config.filename)?;
@@ -690,6 +742,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 ```
 
 - プログラムを実行してみる：
+
 ```sh
 $ cargo run frog poem.txt
    Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
@@ -699,6 +752,7 @@ Searching for frog
 In file poem.txt
 How public, like a frog
 ```
+
 ```sh
 $ cargo run body poem.txt
     Finished dev [unoptimized + debuginfo] target(s) in 0.00s
@@ -709,6 +763,7 @@ I'm nobody! Who are you?
 Are you nobody, too?
 How dreary to be somebody!
 ```
+
 ```sh
 $ cargo run monomorphization poem.txt
     Finished dev [unoptimized + debuginfo] target(s) in 0.00s
@@ -718,12 +773,16 @@ In file poem.txt
 ```
 
 ## 12.5 環境変数を取り扱う
+
 環境変数でユーザがオンにできる大文字小文字無視の検索用のオプションを追加する
+
 ### 大文字小文字を区別しない search 関数用に失敗するテストを書く
+
 - 環境変数がオンの場合に呼び出す search_case_insensitive 関数を新しく追加
   - テストモジュールを以下のように書き換える：
 
 **`src/lib.rs`**
+
 ```rust
 pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
     let mut result: Vec<&str>= Vec::new();
@@ -773,8 +832,10 @@ Trust me.";
     }
 }
 ```
+
 - テストを実行：
   - 期待通り失敗する
+
 ```sh
 $ cargo test
    Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
@@ -803,9 +864,11 @@ error: test failed, to rerun pass '--lib'
 ```
 
 ### `search_case_insensitive` 関数を実装する
+
 - `to_lowercase` メソッドで `query` と各 `line` を小文字化
 
 **`src/lib.rs`**
+
 ```rust
 pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
     let mut result: Vec<&str> = Vec::new();
@@ -819,8 +882,10 @@ pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a st
     result
 }
 ```
+
 - テストを実行する
   - 期待通り成功する
+
 ```sh
 $ cargo test
    Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
@@ -847,9 +912,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 
 ### run 関数から新しい search_case_insensitive 関数を呼び出す
+
 - `Config` 構造体に設定オプションを追加
 
 **`src/lib.rs`**
+
 ```diff
 pub struct Config {
     pub query: String,
@@ -859,6 +926,7 @@ pub struct Config {
 ```
 
 - `run` 関数に、`case_sensitive` フィールドの値を確認し、`search` 関数 `search_case_insensitive` 関数を呼ぶかを決定してもらう
+
 ```diff
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let mut f = File::open(config.filename)?;
@@ -890,6 +958,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
   - ここでは、`Result` enum の `is_err` メソッドを使用して、
     - `CASE_INSENSITIVE` 環境変数がセットされていなければ `true`
     - `CASE_INSENSITIVE` 環境変数がセットされていれば `false` を返すようにしている
+
 ```diff
 impl<'a> Config<'a> {
     pub fn new(args: &Vec<String>) -> Result<Config, &'static str> {
@@ -907,7 +976,9 @@ impl<'a> Config<'a> {
     }
 }
 ```
+
 - 実行してみる
+
 ```sh
 $ cargo run to poem.txt
    Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
@@ -918,6 +989,7 @@ In file poem.txt
 Are you nobody, too?
 How dreary to be somebody!
 ```
+
 ```sh
 $ export CASE_INSENSITIVE=1
 $ echo $CASE_INSENSITIVE
@@ -935,32 +1007,39 @@ To an admiring bog!
 ```
 
 ## 12.6 標準出力ではなく標準エラーにエラーメッセージを書き込む
-- 多くの端末は、2種類の出力を提供する: 
+
+- 多くの端末は、2種類の出力を提供する:
   - 普通の情報用の標準出力 (stdout) と
   - エラーメッセージ用の標準エラー出力 (stderr)
 - ユーザは、エラーメッセージを画面に表示しつつ、プログラムの成功した出力をファイルにリダイレクトすることを選択できる
 - `println!` は標準出力にしか出力する能力がない
 
 ### 標準出力の中身を画面の代わりにファイルに書き込む(ファイルにリダイレクトする)
+
 - `>` 記法により、標準出力の中身を画面の代わりに `output.txt` に書き込む
   - この時、エラーの内容は
+
 ```sh
 $ cargo run > output.txt
    Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
     Finished dev [unoptimized + debuginfo] target(s) in 0.27s
      Running `target/debug/minigrep`
 ```
+
 **`output.txt`**
+
 ```txt
 Problem parsing arguments: not enough arguments!
 
 ```
 
 ### エラーを標準エラーに出力する
+
 - `src/main.rs` を編集する：
   - 表示エラー出力に出力したい部分を `eprintln!` マクロに置き換える
 
 **`src/main.rs`**
+
 ```diff
 use std::env;
 use std::process;
@@ -987,7 +1066,9 @@ fn main() {
     }
 }
 ```
+
 - 実行してみる（エラーを起こす場合）：
+
 ```sh
 $ cargo run > output.txt
    Compiling minigrep v0.1.0 (/home/flip451/Oniwa/tutorial/t-rust/t3-the-book/projects/minigrep)
@@ -997,16 +1078,21 @@ Problem parsing arguments: not enough arguments!
 ```
 
 **`output.txt`**
+
 ```txt
 
 ```
+
 - 実行してみる（エラーを起こさない場合）：
+
 ```sh
 $ cargo run to poem.txt > output.txt
     Finished dev [unoptimized + debuginfo] target(s) in 0.00s
      Running `target/debug/minigrep to poem.txt`
 ```
+
 **`output.txt`**
+
 ```txt
 Searching for to
 In file poem.txt
@@ -1014,4 +1100,3 @@ Are you nobody, too?
 How dreary to be somebody!
 
 ```
-
