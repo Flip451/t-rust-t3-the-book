@@ -81,8 +81,12 @@ Rust ではランタイムをできるだけ小さくするために、1:1 ス�
 
 ### `spawn` で新規スレッドを生成する
 
+- `main` 関数もスレッドを作成する模様
+  - &rarr; `main` スレッドなどの既存スレッドの内部から他のスレッドを生成する
+
 - 新規スレッドを生成するには、`thread::spawn` 関数を呼び出す
   - 引数には、新規スレッドで走らせたいコードを含むクロージャを渡す
+
 - スレッドを一定時間休止するには `thread::sleep` 関数を用いる
   - 休止中は（おそらく）他のスレッドが実行される
 
@@ -107,11 +111,25 @@ Rust ではランタイムをできるだけ小さくするために、1:1 ス�
   }
   ```
 
+  実行結果：
+
+  ```sh
+  hi number 1 from the main thread!
+  hi number 1 from the spawned thread!
+  hi number 2 from the main thread!
+  hi number 2 from the spawned thread!
+  hi number 3 from the main thread!
+  hi number 3 from the spawned thread!
+  hi number 4 from the main thread!
+  hi number 4 from the spawned thread!
+  hi number 5 from the spawned thread!
+  ```
+
 ### `join` ハンドルで全スレッドの終了を待つ
 
 - `thread::spawn` の戻り値を変数に保存することで、立ち上げたスレッドの実行を強制し、完全に実行されるのを待つことができる
 - `thread::spawn` の返り値の型は **`JoinHandle`**
-  - `JoinHandle` の `join` メソッドを呼び出すとハンドルが表すスレッドの終了まで現在実行中のスレッドをブロックする
+  - `JoinHandle` の `join` メソッドを呼び出すと、ハンドルが表すスレッドの終了まで `join` メソッド呼び出し元のスレッドをブロックする
 
 - 例：`join` メソッドを呼び出すことで、スポーンドスレッドの終了までメインスレッドの終了を先延ばしさせている
 
@@ -134,6 +152,24 @@ Rust ではランタイムをできるだけ小さくするために、1:1 ス�
 
       handle.join().unwrap();
   }
+  ```
+
+  実行結果：
+
+  ```sh
+  hi number 1 from the main thread!
+  hi number 1 from the spawned thread!
+  hi number 2 from the main thread!
+  hi number 2 from the spawned thread!
+  hi number 3 from the spawned thread!
+  hi number 3 from the main thread!
+  hi number 4 from the spawned thread!
+  hi number 4 from the main thread!
+  hi number 5 from the spawned thread!
+  hi number 6 from the spawned thread!
+  hi number 7 from the spawned thread!
+  hi number 8 from the spawned thread!
+  hi number 9 from the spawned thread!
   ```
 
 ### スレッドで `move` クロージャを使用する
@@ -202,7 +238,7 @@ Rust ではランタイムをできるだけ小さくするために、1:1 ス�
       // `move` をつけているので、`tx` はクロージャにムーブされる
       thread::spawn(move || {
           let val = String::from("hi");
-          tx.send(val).unwrap();
+          tx.send(val).unwrap();  // あえて unwrap することでエラー発生時にパニックを起こすようにしている
       });
   }
   ```
