@@ -10,8 +10,13 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     // クライアントからの受信内容をバッファに読み込む
     stream.read(&mut buffer)?;
 
-    // クライアントからの受信内容を標準出力に表示
-    println!("Request: {}", String::from_utf8_lossy(&buffer[..]));
+    // // クライアントからの受信内容を標準出力に表示
+    // println!("Request: {}", String::from_utf8_lossy(&buffer[..]));
+
+    // レスポンスを返却
+    let response = "HTTP/1.1 200 OK\r\n\r\n";
+    stream.write(response.as_bytes())?;
+    stream.flush()?;
 
     Ok(())
 }
@@ -19,7 +24,7 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
 fn main() -> Result<()> {
     // TCP リスナーを作成
     let listener = TcpListener::bind("127.0.0.1:7878")?;
-    
+
     // listener.incoming() の返り値のイテレータは一連のストリームを返す
     // 各ストリームは、クライアント・サーバ間の接続に対応する
     // ストリームはスコープを抜けると `drop` 実装の一部として close される
