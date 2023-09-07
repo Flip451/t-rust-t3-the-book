@@ -47,7 +47,11 @@ fn main() -> Result<()> {
     // ストリームはスコープを抜けると `drop` 実装の一部として close される
     for (index, stream) in listener.incoming().enumerate() {
         println!("{} 個目の stream が生成されました！", index);
-        handle_connection(stream?)?;
+        let stream = stream?;
+        // 各コネクションごとにスレッドを生成して、その内部で処理を遂行する
+        thread::spawn(|| {
+            handle_connection(stream).expect("Error at handle_connection");
+        });
     }
     Ok(())
 }
