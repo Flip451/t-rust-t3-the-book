@@ -1,5 +1,8 @@
-use std::io::{prelude::*, Result};
 use std::net::{TcpListener, TcpStream};
+use std::{
+    fs::File,
+    io::{prelude::*, Result},
+};
 
 fn handle_connection(mut stream: TcpStream) -> Result<()> {
     println!("Connection established!");
@@ -13,8 +16,15 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     // // クライアントからの受信内容を標準出力に表示
     // println!("Request: {}", String::from_utf8_lossy(&buffer[..]));
 
+    // index.html を開く
+    let mut file = File::open("index.html")?;
+
+    // ファイルの内容を String に読み出し
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+
     // レスポンスを返却
-    let response = "HTTP/1.1 200 OK\r\n\r\n";
+    let response = format!("HTTP/1.1 200 OK\r\n\r\n{}", contents);
     stream.write(response.as_bytes())?;
     stream.flush()?;
 
