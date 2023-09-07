@@ -16,37 +16,25 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     // // クライアントからの受信内容を標準出力に表示
     // println!("Request: {}", String::from_utf8_lossy(&buffer[..]));
 
-    
     // 受信内容の最初の行が GET リクエストのフォーマットと一致しているか否かで分岐
     let get_request = b"GET / HTTP/1.1\r\n";
-    if buffer.starts_with(get_request) {
-        // index.html を開く
-        let mut file = File::open("index.html")?;
-    
-        // ファイルの内容を String に読み出し
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-    
-        // レスポンスを返却
-        let response = format!("HTTP/1.1 200 OK\r\n\r\n{}", contents);
-        stream.write(response.as_bytes())?;
-        stream.flush()?;
+    let (file_path, status_line) = if buffer.starts_with(get_request) {
+        ("index.html", "HTTP/1.1 200 OK\r\n\r\n")
     } else {
-        // / への GET メソッドのリクエスト以外はエラーを返す
-        // 404 エラーを表すステータスラインを構成
-        let status_line = "HTTP/1.1 404 NOT FOUND\r\n\r\n";
-        
-        // 404 エラーの時に返す HTML を取得して String に保持
-        let mut file = File::open("404.html")?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
+        ("404.html", "HTTP/1.1 404 NOT FOUND\r\n\r\n")
+    };
 
-        // レスポンス内容を構成
-        let response = format!("{}{}", status_line, contents);
-        // レスポンスを返却
-        stream.write(response.as_bytes())?;
-        stream.flush()?;
-    }
+    // index.html を開く
+    let mut file = File::open(file_path)?;
+
+    // ファイルの内容を String に読み出し
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+
+    // レスポンスを返却
+    let response = format!("{}{}", status_line, contents);
+    stream.write(response.as_bytes())?;
+    stream.flush()?;
 
     Ok(())
 }
