@@ -1,3 +1,5 @@
+extern crate hello;
+
 use std::io::BufReader;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -6,6 +8,8 @@ use std::{
     fs,
     io::{prelude::*, Result},
 };
+
+use hello::ThreadPool;
 
 fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let buf_reader = BufReader::new(&mut stream);
@@ -39,19 +43,16 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    // TCP リスナーを作成
     let listener = TcpListener::bind("127.0.0.1:7878")?;
+    let pool = ThreadPool::new(4);
 
-    // listener.incoming() の返り値のイテレータは一連のストリームを返す
-    // 各ストリームは、クライアント・サーバ間の接続に対応する
-    // ストリームはスコープを抜けると `drop` 実装の一部として close される
-    for (index, stream) in listener.incoming().enumerate() {
-        println!("{} 個目の stream が生成されました！", index);
+    for stream in listener.incoming() {
         let stream = stream?;
-        // 各コネクションごとにスレッドを生成して、その内部で処理を遂行する
-        thread::spawn(|| {
+
+        pool.excute(|| {
             handle_connection(stream).expect("Error at handle_connection");
-        });
+        })
     }
+
     Ok(())
 }

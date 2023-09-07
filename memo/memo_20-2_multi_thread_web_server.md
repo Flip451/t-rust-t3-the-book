@@ -9,6 +9,9 @@
     - [現在の実装で処理に時間のかかるリクエストをシミュレーションする](#現在の実装で処理に時間のかかるリクエストをシミュレーションする)
     - [スレッドプールでスループットを向上する](#スレッドプールでスループットを向上する)
     - [各リクエストごとにスレッドを作成する場合](#各リクエストごとにスレッドを作成する場合)
+    - [有限の数のスレッドの生成](#有限の数のスレッドの生成)
+    - [コンパイラ駆動開発でスレッドプールを構築する](#コンパイラ駆動開発でスレッドプールを構築する)
+    - [スレッドを格納する領域を作成する](#スレッドを格納する領域を作成する)
 
 ## 20.2.0 概要
 
@@ -133,3 +136,127 @@ fn main() -> Result<()> {
     Ok(())
 }
 ```
+
+### 有限の数のスレッドの生成
+
+- スレッドプールを使用できるようにするにあたって、`thread::spawn` と似た使い慣れたインターフェースを提供するように `ThreadPool` 構造体を定義したい
+- すなわち、以下のように利用できるように `ThreadPool` を定義する
+
+  ```rs
+  fn main() -> Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:7878")?;
+    let pool = ThreadPool::new(4);
+
+    for stream in listener.incoming() {
+        let stream = stream?;
+
+        pool.excute(|| {
+            handle_connection(stream).expect("Error at handle_connection");
+        })
+    }
+
+    Ok(())
+  }
+  ```
+
+### コンパイラ駆動開発でスレッドプールを構築する
+
+- ここではコンパイラ駆動開発をすることにして、一旦上記のコードを `main.rs` に記述する
+  - すると、当然以下のようなコンパイルエラーが発生する：
+
+    ```sh
+    error[E0433]: failed to resolve: use of undeclared type `ThreadPool`
+      --> src/main.rs:43:16
+       |
+    43 |     let pool = ThreadPool::new(4);
+       |                ^^^^^^^^^^ use of undeclared type `ThreadPool`
+
+    For more information about this error, try `rustc --explain E0433`.
+    error: could not compile `hello` (bin "hello") due to previous error
+    ```
+
+- `ThreadPool` 型を定義する必要があることがわかるので、`src/lib.rs` にこの構造体を定義していく
+  - なお、ここで、`excute` の引数の型は `thread::spawn` のシグネチャを参考にして決定した
+    - `thread::spawn` のシグネチャ：
+
+      ```rs
+      pub fn spawn<F, T>(f: F) -> JoinHandle<T>
+      where
+          F: FnOnce() -> T,
+          F: Send + 'static,
+          T: Send + 'static,
+      ```
+
+  **`src/lib.rs`**
+  
+  ```rs
+  pub struct ThreadPool;
+
+  impl ThreadPool {
+      /// Create a new ThreadPool.
+      /// 
+      /// The size is the number of threads in the pool.
+      /// 
+      /// # Panics
+      /// 
+      /// The `new` function will panic if the size is zero.
+      pub fn new(size: usize) -> Self {
+          assert!(size > 0);
+          ThreadPool
+      }
+
+      pub fn excute<F>(&self, f: F)
+      where
+          F: FnOnce() -> () + Send + 'static,
+      {
+      }
+  }
+  ```
+
+- ここまでの変更で `cargo check` は無事に通るようになる
+- また、`new` 関数のドキュメントを追加している
+  - `cargo doc --open` で内容を確認できる
+
+### スレッドを格納する領域を作成する
+
+- ここで再度、`thread::spawn` のシグネチャに着目すると、返り値の型は `JoinHandle` 型である
+- 今回は、この構造体を複数個 `ThreadPool` 構造体で管理することになる
+- そこで、以下のように変更する
+
+  ```diff
+  + use std::thread::JoinHandle;
+
+  - pub struct ThreadPool;
+  + pub struct ThreadPool {
+  +     threads: Vec<JoinHandle<()>>
+  + }
+
+  impl ThreadPool {
+      /// Create a new ThreadPool.
+      /// 
+      /// The size is the number of threads in the pool.
+      /// 
+      /// # Panics
+      /// 
+      /// The `new` function will panic if the size is zero.
+      pub fn new(size: usize) -> Self {
+          assert!(size > 0);
+  -       ThreadPool
+          
+  +       let mut threads = Vec::with_capacity(size);
+  +       
+  +       for _ in 0..size {
+  +           // ここでスレッドを作成して threads に追加する
+  +           todo!()
+  +       }
+  + 
+  +       ThreadPool { threads }
+      }
+
+      pub fn excute<F>(&self, f: F)
+      where
+          F: FnOnce() -> () + Send + 'static,
+      {
+      }
+  }
+  ```
