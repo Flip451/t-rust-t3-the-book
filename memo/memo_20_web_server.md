@@ -13,6 +13,7 @@
     - [HTML を返す](#html-を返す)
     - [リクエストにバリデーションをかけて選択的にレスポンスを返す](#リクエストにバリデーションをかけて選択的にレスポンスを返す)
     - [リファクタリング](#リファクタリング)
+    - [英語版の the book 準拠の実装](#英語版の-the-book-準拠の実装)
 
 ## 20.0 概要
 
@@ -509,6 +510,69 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let response = format!("{}{}", status_line, contents);
     stream.write(response.as_bytes())?;
     stream.flush()?;
+
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    // TCP リスナーを作成
+    let listener = TcpListener::bind("127.0.0.1:7878")?;
+
+    // listener.incoming() の返り値のイテレータは一連のストリームを返す
+    // 各ストリームは、クライアント・サーバ間の接続に対応する
+    // ストリームはスコープを抜けると `drop` 実装の一部として close される
+    for (index, stream) in listener.incoming().enumerate() {
+        println!("{} 個目の stream が生成されました！", index);
+        handle_connection(stream?)?;
+    }
+    Ok(())
+}
+```
+
+### 英語版の the book 準拠の実装
+
+- `BufReader`: バッファの利用をラップする構造体
+  - `lines` メソッドで reader の各行に渡るイテレータを取得可能
+- `let contents = fs::read_to_string(file_path)?;`: 以下の処理を一行で記述
+  
+  ```rs
+  let mut file = File::open(file_path)?;
+  let mut contents = String::new();
+  file.read_to_string(&mut contents)?;
+  ```
+
+```rs
+use std::io::BufReader;
+use std::net::{TcpListener, TcpStream};
+use std::{
+    fs,
+    io::{prelude::*, Result},
+};
+
+fn handle_connection(mut stream: TcpStream) -> Result<()> {
+    let buf_reader = BufReader::new(&mut stream);
+    // バッファの最初の行を取得
+    if let Some(request_line) = buf_reader.lines().next() {
+        let request_line = request_line?;
+
+        // 受信内容の最初の行が GET リクエストのフォーマットと一致しているか否かで分岐
+        let (file_path, status_line) = if request_line == "GET / HTTP/1.1" {
+            ("index.html", "HTTP/1.1 200 OK")
+        } else {
+            ("404.html", "HTTP/1.1 404 NOT FOUND")
+        };
+
+        // index.html を開く
+        let contents = fs::read_to_string(file_path)?;
+
+        // ヘッダーを作成
+        let length = contents.len();
+        let headers = format!("Content-Length: {}\r\n", length);
+
+        // レスポンスを返却
+        let response = format!("{}\r\n{}\r\n{}", status_line, headers, contents);
+        stream.write_all(response.as_bytes())?;
+    }
 
     Ok(())
 }
