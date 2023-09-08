@@ -14,6 +14,7 @@
     - [スレッドを格納する領域を作成する](#スレッドを格納する領域を作成する)
     - [スレッドプールからスレッドへのコードの送信を担当する `Worker` 構造体](#スレッドプールからスレッドへのコードの送信を担当する-worker-構造体)
     - [チャンネル経由でスレッドにリクエストを送信する](#チャンネル経由でスレッドにリクエストを送信する)
+    - [`excute` メソッドの実装](#excute-メソッドの実装)
 
 ## 20.2.0 概要
 
@@ -116,28 +117,28 @@
   - ただし、前々小節で述べた `/sleep` 周りの問題は解消している
     - ためしに、<http://127.0.0.1:7878/sleep> へアクセスして、レスポンスを待っている間に <http://127.0.0.1:7878/> にアクセスすると、前者の画面表示を待たずに後者の画面が表示されることを確かめられる
 
-```diff
-// ...snip...
+  ```diff
+  // ...snip...
 
-fn main() -> Result<()> {
-    // TCP リスナーを作成
-    let listener = TcpListener::bind("127.0.0.1:7878")?;
+  fn main() -> Result<()> {
+      // TCP リスナーを作成
+      let listener = TcpListener::bind("127.0.0.1:7878")?;
 
-    // listener.incoming() の返り値のイテレータは一連のストリームを返す
-    // 各ストリームは、クライアント・サーバ間の接続に対応する
-    // ストリームはスコープを抜けると `drop` 実装の一部として close される
-    for (index, stream) in listener.incoming().enumerate() {
-        println!("{} 個目の stream が生成されました！", index);
--       handle_connection(stream?)?;
-+       let stream = stream?;
-+       // 各コネクションごとにスレッドを生成して、その内部で処理を遂行する
-+       thread::spawn(|| {
-+           handle_connection(stream).expect("Error at handle_connection");
-+       });
-    }
-    Ok(())
-}
-```
+      // listener.incoming() の返り値のイテレータは一連のストリームを返す
+      // 各ストリームは、クライアント・サーバ間の接続に対応する
+      // ストリームはスコープを抜けると `drop` 実装の一部として close される
+      for (index, stream) in listener.incoming().enumerate() {
+          println!("{} 個目の stream が生成されました！", index);
+  -       handle_connection(stream?)?;
+  +       let stream = stream?;
+  +       // 各コネクションごとにスレッドを生成して、その内部で処理を遂行する
+  +       thread::spawn(|| {
+  +           handle_connection(stream).expect("Error at handle_connection");
+  +       });
+      }
+      Ok(())
+  }
+  ```
 
 ### 有限の数のスレッドの生成
 
@@ -274,10 +275,10 @@ fn main() -> Result<()> {
   - `ThreadPool` 構造体は `new` メソッドで初期化される際に、`Worker` 構造体のベクタを格納する
 
 - そこで、以下の実装を行う：
-  1. idとJoinHandle<()>を保持するWorker構造体を定義する
-  2. ThreadPoolを変更し、Workerインスタンスのベクタを保持する
-  3. id番号を取り、idと空のクロージャで大量生産されるスレッドを保持するWorkerインスタンスを返すWorker::new関数を定義する
-  4. ThreadPool::newでforループカウンタを使用してidを生成し、そのidで新しいWorkerを生成し、ベクタにワーカーを格納する
+  1. `id` と `JoinHandle<()>` を保持するWorker構造体を定義する
+  2. `ThreadPool` を変更し、`Worker`` インスタンスのベクタを保持する
+  3. `id` 番号を取り、`id` と空のクロージャで大量生産されるスレッドを保持する `Worker` インスタンスを返す `Worker::new` 関数を定義する
+  4. `ThreadPool::new` で `for` ループカウンタを使用して `id` を生成し、その `id` で新しい `Worker` を生成し、ベクタにワーカーを格納する
 
 ```diff
 use std::thread::{self, JoinHandle};
@@ -406,3 +407,73 @@ impl Worker {
     }
 }
 ```
+
+### `excute` メソッドの実装
+
+- 最後に `excute` メソッドを実装する
+  - `Job` に、ライブラリの使用者から送られてきたクロージャ（`Thread::excute` の引数として渡ってくる）を格納できるようにする
+    - 今回はそのために、ライブラリの使用者から送られてくるクロージャの型に型エイリアスとして `Job` という型名を与えることにする
+
+  - `excute` メソッド内で、`Worker` 内のスレッドへと `Job` を送信するコードを記述する
+
+  - `Worker` 内のスレッドで無限ループを回し、その内部でレシーバで受信を試み続ける
+    - 受信に成功したら、受け取ったクロージャを実行する
+
+  ```diff
+  use std::{
+      sync::{
+          mpsc::{self, Receiver, Sender},
+          Arc, Mutex,
+      },
+      thread::{self, JoinHandle},
+  };
+
+  pub struct ThreadPool {
+      workers: Vec<Worker>,
+      sender: Sender<Job>,
+  }
+
+  - struct Job;
+  + type Job = Box<dyn FnOnce() -> () + Send + 'static>;
+
+  impl ThreadPool {
+
+      // --snip--
+
+      pub fn excute<F>(&self, f: F)
+      where
+          F: FnOnce() -> () + Send + 'static,
+      {
+  +         let job = Box::new(f);
+  + 
+  +         self.sender.send(job).unwrap();
+      }
+  }
+
+  struct Worker {
+      id: usize,
+      thread: JoinHandle<()>,
+  }
+
+  impl Worker {
+      fn new(id: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> Self {
+  -       let thread = thread::spawn(|| {
+  -           receiver;
+  -       });
+  +       let thread = thread::spawn(move || loop {
+  +           let job = receiver.lock().unwrap().recv().unwrap();
+  +
+  +           println!("Worker {} got a job; executing.", id);
+  +
+  +           job();
+  +       });
+          Self { id, thread }
+      }
+  }
+  ```
+
+- これで、コード自体は完成する
+  - 実行して、ためしに、<http://127.0.0.1:7878/sleep> へアクセスして、レスポンスを待っている間に <http://127.0.0.1:7878/> にアクセスすると、前者の画面表示を待たずに後者の画面が表示されることを確かめられる
+
+- なお、`Worker::new` 内のループを `while let` に置き換えたり、loop 内で `unwrap` の代わりに `if let` 式を用いるたりすると所有権の問題で上記のような期待通りの動作にならないので注意（２敗）
+  - 詳細については本文を熟読して理解すること
