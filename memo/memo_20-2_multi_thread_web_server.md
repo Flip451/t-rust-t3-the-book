@@ -12,6 +12,7 @@
     - [有限の数のスレッドの生成](#有限の数のスレッドの生成)
     - [コンパイラ駆動開発でスレッドプールを構築する](#コンパイラ駆動開発でスレッドプールを構築する)
     - [スレッドを格納する領域を作成する](#スレッドを格納する領域を作成する)
+    - [スレッドプールからスレッドへのコードの送信を担当する `Worker` 構造体](#スレッドプールからスレッドへのコードの送信を担当する-worker-構造体)
 
 ## 20.2.0 概要
 
@@ -241,8 +242,8 @@ fn main() -> Result<()> {
       /// The `new` function will panic if the size is zero.
       pub fn new(size: usize) -> Self {
           assert!(size > 0);
+  
   -       ThreadPool
-          
   +       let mut threads = Vec::with_capacity(size);
   +       
   +       for _ in 0..size {
@@ -260,3 +261,73 @@ fn main() -> Result<()> {
       }
   }
   ```
+
+### スレッドプールからスレッドへのコードの送信を担当する `Worker` 構造体
+
+- "Woker" はプーリングの実装でよく使われる用語
+- 今回の実装の `Worker` 構造体を以下のような性質を持つ：
+  - 各 `Worker` 構造体はスレッドを持つ
+  - `Worker` は実行が必要なコードを拾い上げ、自身のスレッド内で実行する
+    - &rarr; `Worker` 構造体は、実行すべきコードを内包したクロージャを受け取り、それを実行中のスレッドに転送するメソッドをもつ
+  - 各 `Worker` 構造体は `id` を持つ
+  - `ThreadPool` 構造体は `new` メソッドで初期化される際に、`Worker` 構造体のベクタを格納する
+
+- そこで、以下の実装を行う：
+  1. idとJoinHandle<()>を保持するWorker構造体を定義する
+  2. ThreadPoolを変更し、Workerインスタンスのベクタを保持する
+  3. id番号を取り、idと空のクロージャで大量生産されるスレッドを保持するWorkerインスタンスを返すWorker::new関数を定義する
+  4. ThreadPool::newでforループカウンタを使用してidを生成し、そのidで新しいWorkerを生成し、ベクタにワーカーを格納する
+
+```diff
+use std::thread::{self, JoinHandle};
+
+pub struct ThreadPool {
+-     threads: Vec<JoinHandle<()>>,
++     workers: Vec<Worker>,
+}
+
+impl ThreadPool {
+    /// Create a new ThreadPool.
+    ///
+    /// The size is the number of threads in the pool.
+    ///
+    /// # Panics
+    ///
+    /// The `new` function will panic if the size is zero.
+    pub fn new(size: usize) -> Self {
+        assert!(size > 0);
+
+-       let mut threads = Vec::with_capacity(size);
+-       
+-       for _ in 0..size {
+-           // ここでスレッドを作成して threads に追加する
+-           todo!()
+-       }
++        let mut workers = vec![];
++        for id in 0..size {
++            workers.push(Worker::new(id));
++        }
+
+        Self { workers }
+    }
+
+    pub fn excute<F>(&self, f: F)
+    where
+        F: FnOnce() -> () + Send + 'static,
+    {
+
+    }
+}
+
++ struct Worker {
++     id: usize,
++     thread: JoinHandle<()>,
++ }
++ 
++ impl Worker {
++     fn new(id: usize) -> Self {
++         let thread = thread::spawn(|| {});
++         Self { id, thread }
++     }
++ }
+```

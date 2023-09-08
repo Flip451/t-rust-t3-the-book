@@ -1,7 +1,7 @@
-use std::thread::JoinHandle;
+use std::thread::{self, JoinHandle};
 
 pub struct ThreadPool {
-    threads: Vec<JoinHandle<()>>,
+    workers: Vec<Worker>,
 }
 
 impl ThreadPool {
@@ -15,19 +15,29 @@ impl ThreadPool {
     pub fn new(size: usize) -> Self {
         assert!(size > 0);
 
-        let mut threads = Vec::with_capacity(size);
-
-        for _ in 0..size {
-            // ここでスレッドを作成して threads に追加する
-            todo!()
+        let mut workers = vec![];
+        for id in 0..size {
+            workers.push(Worker::new(id));
         }
-
-        ThreadPool { threads }
+        Self { workers }
     }
 
     pub fn excute<F>(&self, f: F)
     where
         F: FnOnce() -> () + Send + 'static,
     {
+
+    }
+}
+
+struct Worker {
+    id: usize,
+    thread: JoinHandle<()>,
+}
+
+impl Worker {
+    fn new(id: usize) -> Self {
+        let thread = thread::spawn(|| {});
+        Self { id, thread }
     }
 }
