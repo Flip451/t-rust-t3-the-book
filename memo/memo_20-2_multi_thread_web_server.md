@@ -13,6 +13,7 @@
     - [コンパイラ駆動開発でスレッドプールを構築する](#コンパイラ駆動開発でスレッドプールを構築する)
     - [スレッドを格納する領域を作成する](#スレッドを格納する領域を作成する)
     - [スレッドプールからスレッドへのコードの送信を担当する `Worker` 構造体](#スレッドプールからスレッドへのコードの送信を担当する-worker-構造体)
+    - [チャンネル経由でスレッドにリクエストを送信する](#チャンネル経由でスレッドにリクエストを送信する)
 
 ## 20.2.0 概要
 
@@ -303,7 +304,7 @@ impl ThreadPool {
 -           // ここでスレッドを作成して threads に追加する
 -           todo!()
 -       }
-+        let mut workers = vec![];
++        let mut workers = Vec::with_capacity(size);
 +        for id in 0..size {
 +            workers.push(Worker::new(id));
 +        }
@@ -330,4 +331,78 @@ impl ThreadPool {
 +         Self { id, thread }
 +     }
 + }
+```
+
+### チャンネル経由でスレッドにリクエストを送信する
+
+- `Worker` 構造体に、`ThreadPool` の保持するキューからコードをフェッチして、そのコードをスレッドが実行できるように送信する機能を追加する
+- そこで、ここではチャンネルを用いてキューを実装する
+- すなわち、`ThreadPool` の `excute` メソッドで、引数として受け取ったクロージャを、`Worker` 構造体の中のスレッドに送信する機能を実装する：
+  1. `ThreadPool` はチャンネルを生成して、チャンネルの送信側に就く
+  2. `Worker` それぞれは、チャンネルの受信側に就く
+  3. チャンネルに送信したいクロージャを保持する `Job` 構造体を生成する
+  4. `excute` メソッドは、実行したい `Job` をチャンネルの送信側に渡す
+  5. スレッド内で、`Worker` はチャンネルの受信側をループして、受け取った `Job` 内のクロージャを実行する
+
+- なお、注意点として、チャンネルの使用時の原則は mpsc (生成者は複数・消費者は一つ) なので、受信側を複数のスレッドに分配する今回のケースでは、`Arc` と `Mutex` の併用が必要になる
+  - cf. 「16.3 状態共有並行性（複数のスレッド間でのメモリ共有）」
+
+```rs
+use std::{
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Arc, Mutex,
+    },
+    thread::{self, JoinHandle},
+};
+
+pub struct ThreadPool {
+    workers: Vec<Worker>,
+    sender: Sender<Job>,
+}
+
+struct Job;
+
+impl ThreadPool {
+    /// Create a new ThreadPool.
+    ///
+    /// The size is the number of threads in the pool.
+    ///
+    /// # Panics
+    ///
+    /// The `new` function will panic if the size is zero.
+    pub fn new(size: usize) -> Self {
+        assert!(size > 0);
+
+        let (sender, receiver) = mpsc::channel::<Job>();
+
+        let receiver = Arc::new(Mutex::new(receiver));
+        let mut workers = Vec::with_capacity(size);
+        for id in 0..size {
+            let receiver = Arc::clone(&receiver);
+            workers.push(Worker::new(id, receiver));
+        }
+        Self { workers, sender }
+    }
+
+    pub fn excute<F>(&self, f: F)
+    where
+        F: FnOnce() -> () + Send + 'static,
+    {
+    }
+}
+
+struct Worker {
+    id: usize,
+    thread: JoinHandle<()>,
+}
+
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> Self {
+        let thread = thread::spawn(|| {
+            receiver;
+        });
+        Self { id, thread }
+    }
+}
 ```
