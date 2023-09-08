@@ -25,8 +25,8 @@
 ### 処理に時間のかかるリクエストをシミュレーションする
 
 - 現在の実装は、処理に時間のかかるリクエストが来た時に、他のリクエストの処理にも影響が出てしまうようになっている
-- この節では、これを確認する
-  - そこで、応答前に５秒間スリープする `/sleep` というルートを追加する
+- この節では、これを確認したい
+- そのために、応答前に５秒間スリープする `/sleep` というルートを追加する：
 
   ```rs
   use std::io::BufReader;
@@ -116,9 +116,6 @@
 ### 各リクエストごとにスレッドを作成する場合
 
 - 本実装の前に、一旦各リクエストごとにスレッドを作成するような実装を以下に示す
-  - なお、この実装は DoS 攻撃に耐性がないという欠陥がある
-  - ただし、前々小節で述べた `/sleep` 周りの問題は解消している
-    - ためしに、<http://127.0.0.1:7878/sleep> へアクセスして、レスポンスを待っている間に <http://127.0.0.1:7878/> にアクセスすると、前者の画面表示を待たずに後者の画面が表示されることを確かめられる
 
   ```diff
   // ...snip...
@@ -143,19 +140,27 @@
   }
   ```
 
+  - ただし、この実装は DoS 攻撃に耐性がないという欠陥がある
+  - だが、前々小節で述べた `/sleep` 周りの問題は解消している
+    - ためしに、<http://127.0.0.1:7878/sleep> へアクセスして、レスポンスを待っている間に <http://127.0.0.1:7878/> にアクセスすると、前者の画面表示を待たずに後者の画面が表示されることを確かめられる
+
+- 次節からは、この実装が抱えている DoS 攻撃への脆弱性を解消するように、スレッドプールを用いた実装を進める
+
 ### 有限の数のスレッドの生成
 
-- スレッドプールを使用できるようにするにあたって、`thread::spawn` と似た使い慣れたインターフェースを提供するように `ThreadPool` 構造体を定義したい
-- すなわち、以下のように利用できるように `ThreadPool` を定義する
+- スレッドプールを使った実装にあたって、`thread::spawn` と似た使い慣れたインターフェースを提供するように `ThreadPool` 構造体を定義したい
+- すなわち、`ThreadPool` を `main` 関数内で以下のように利用できるよう定義する：
 
   ```rs
   fn main() -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:7878")?;
+    // ここでスレッドプールを作成する
     let pool = ThreadPool::new(4);
 
     for stream in listener.incoming() {
         let stream = stream?;
 
+        // スレッドプールで処理を実行するには `excute` メソッドを呼び出すだけでよいように定義したい
         pool.excute(|| {
             handle_connection(stream).expect("Error at handle_connection");
         })
@@ -167,7 +172,8 @@
 
 ### コンパイラ駆動開発でスレッドプールを構築する
 
-- ここではコンパイラ駆動開発をすることにして、一旦上記のコードを `main.rs` に記述する
+- 本節ではコンパイラ駆動開発でスレッドプールの構築を進める
+- まず、前節のコードを `main.rs` に記述する
   - すると、当然以下のようなコンパイルエラーが発生する：
 
     ```sh
@@ -181,17 +187,7 @@
     error: could not compile `hello` (bin "hello") due to previous error
     ```
 
-- `ThreadPool` 型を定義する必要があることがわかるので、`src/lib.rs` にこの構造体を定義していく
-  - なお、ここで、`excute` の引数の型は `thread::spawn` のシグネチャを参考にして決定した
-    - `thread::spawn` のシグネチャ：
-
-      ```rs
-      pub fn spawn<F, T>(f: F) -> JoinHandle<T>
-      where
-          F: FnOnce() -> T,
-          F: Send + 'static,
-          T: Send + 'static,
-      ```
+- このコンパイルエラーから、`ThreadPool` 型を定義する必要があることがわかるので、以下のように `src/lib.rs` にこの構造体を定義する：
 
   **`src/lib.rs`**
   
@@ -218,6 +214,17 @@
       }
   }
   ```
+
+  - なお、`excute` の引数の型は `thread::spawn` のシグネチャを参考にして決定した
+    - cf. `thread::spawn` のシグネチャ：
+
+      ```rs
+      pub fn spawn<F, T>(f: F) -> JoinHandle<T>
+      where
+          F: FnOnce() -> T,
+          F: Send + 'static,
+          T: Send + 'static,
+      ```
 
 - ここまでの変更で `cargo check` は無事に通るようになる
 - また、`new` 関数のドキュメントを追加している
@@ -269,19 +276,20 @@
 
 ### スレッドプールからスレッドへのコードの送信を担当する `Worker` 構造体
 
-- "Woker" はプーリングの実装でよく使われる用語
-- 今回の実装の `Worker` 構造体を以下のような性質を持つ：
-  - 各 `Worker` 構造体はスレッドを持つ
-  - `Worker` は実行が必要なコードを拾い上げ、自身のスレッド内で実行する
-    - &rarr; `Worker` 構造体は、実行すべきコードを内包したクロージャを受け取り、それを実行中のスレッドに転送するメソッドをもつ
-  - 各 `Worker` 構造体は `id` を持つ
-  - `ThreadPool` 構造体は `new` メソッドで初期化される際に、`Worker` 構造体のベクタを格納する
+- この節では、プーリングの実装でよく使われる "Woker" という概念を導入する
+  - 前節では、`ThreadPool` 構造体に `threads: Vec<JoinHandle<()>>` を格納したが、代わりに `Vec<Worker>` を格納するように変更する
+- この `Worker` 構造体を以下のような性質を持つ：
+  - 各 `Worker` 構造体は、内部にタスクの処理を担当するスレッドを持つ
+  - `Worker` は（何らかの方法で）実行すべきコードを拾い上げて、自身のスレッド内で実行する機能を有する
 
 - そこで、以下の実装を行う：
-  1. `id` と `JoinHandle<()>` を保持するWorker構造体を定義する
-  2. `ThreadPool` を変更し、`Worker`` インスタンスのベクタを保持する
-  3. `id` 番号を取り、`id` と空のクロージャで大量生産されるスレッドを保持する `Worker` インスタンスを返す `Worker::new` 関数を定義する
-  4. `ThreadPool::new` で `for` ループカウンタを使用して `id` を生成し、その `id` で新しい `Worker` を生成し、ベクタにワーカーを格納する
+  1. `id` と `JoinHandle<()>` を保持する`Worker`構造体を定義する
+  2. `Worker::new` 関数を定義する
+     - この関数は `id` を引数に持ち、内部で、スレッドを生成する（この節では仮に空のクロージャでスレッドを生成する）
+  3. `ThreadPool` を変更して `Worker` インスタンスのベクタを保持させる
+  4. `ThreadPool::new` の実装を変更
+     - 複数の `Worker` インスタンスを生成して `id` を付与し、それらをベクタを格納する
+  5. `Worker` 内のスレッドにタスクを渡して処理させる機能は次節以降で実装する
 
 ```diff
 use std::thread::{self, JoinHandle};
@@ -339,77 +347,84 @@ impl ThreadPool {
 
 ### チャンネル経由でスレッドにリクエストを送信する
 
-- `Worker` 構造体に、`ThreadPool` の保持するキューからコードをフェッチして、そのコードをスレッドが実行できるように送信する機能を追加する
-- そこで、ここではチャンネルを用いてキューを実装する
-- すなわち、`ThreadPool` の `excute` メソッドで、引数として受け取ったクロージャを、`Worker` 構造体の中のスレッドに送信する機能を実装する：
-  1. `ThreadPool` はチャンネルを生成して、チャンネルの送信側に就く
-  2. `Worker` それぞれは、チャンネルの受信側に就く
-  3. チャンネルに送信したいクロージャを保持する `Job` 構造体を生成する
-  4. `excute` メソッドは、実行したい `Job` をチャンネルの送信側に渡す
-  5. スレッド内で、`Worker` はチャンネルの受信側をループして、受け取った `Job` 内のクロージャを実行する
+- 次に、`Worker` 構造体内部で実行されているスレッドに、タスクを送り込む機能の実装を進める
+- そこで、チャンネルを利用する（cf. 16章）
+- すなわち、`ThreadPool` の `excute` メソッドで、引数として受け取ったクロージャを、チャンネル経由で `Worker` 構造体の中のスレッドに送信する機能を以下の方針で実装する：
+  
+  1. `ThreadPool` はチャンネルの送信側に就く
+     - `ThreadPool::new` でチャンネルを生成する
+     - `ThreadPool` 構造体は送信機を格納する
+  2. 各 `Worker` は、チャンネルの受信側に就く
+     - `ThreadPool::new` 内で `Worker::new` される際に受信機を受け取る
+     - `Worker::new` は受信機を引数にとり、それを内部のスレッドに渡す
+  3. 送受信の対象は、タスクを表す `Job` オブジェクト
+  4. `ThreadPool::excute` メソッドは、自インスタンスが格納する送信機を使って `Worker` 内の受信機に `Job` を送り込む
+  5. `Worker` は、内部のスレッド内で、チャンネルの受信側をループし、`Job` を受け取ったらそれを実行する
 
-- なお、注意点として、チャンネルの使用時の原則は mpsc (生成者は複数・消費者は一つ) なので、受信側を複数のスレッドに分配する今回のケースでは、`Arc` と `Mutex` の併用が必要になる
-  - cf. 「16.3 状態共有並行性（複数のスレッド間でのメモリ共有）」
+> - 注意点：チャンネル使用時の原則は mpsc (生成者は複数・消費者は一つ) なので、受信側を複数のスレッドに分配する今回のケースでは、`Arc` と `Mutex` の併用が必要になる
+>   - cf. 「16.3 状態共有並行性（複数のスレッド間でのメモリ共有）」
 
-```rs
-use std::{
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        Arc, Mutex,
-    },
-    thread::{self, JoinHandle},
-};
+- 以下のコードでは、上述の方針のうち、`excute` メソッドと `Worker` 内での `Job` の実行処理以外の部分を実装している：
 
-pub struct ThreadPool {
-    workers: Vec<Worker>,
-    sender: Sender<Job>,
-}
+  ```rs
+  use std::{
+      sync::{
+          mpsc::{self, Receiver, Sender},
+          Arc, Mutex,
+      },
+      thread::{self, JoinHandle},
+  };
 
-struct Job;
+  pub struct ThreadPool {
+      workers: Vec<Worker>,
+      sender: Sender<Job>,
+  }
 
-impl ThreadPool {
-    /// Create a new ThreadPool.
-    ///
-    /// The size is the number of threads in the pool.
-    ///
-    /// # Panics
-    ///
-    /// The `new` function will panic if the size is zero.
-    pub fn new(size: usize) -> Self {
-        assert!(size > 0);
+  struct Job;
 
-        let (sender, receiver) = mpsc::channel::<Job>();
+  impl ThreadPool {
+      /// Create a new ThreadPool.
+      ///
+      /// The size is the number of threads in the pool.
+      ///
+      /// # Panics
+      ///
+      /// The `new` function will panic if the size is zero.
+      pub fn new(size: usize) -> Self {
+          assert!(size > 0);
 
-        let receiver = Arc::new(Mutex::new(receiver));
-        let mut workers = Vec::with_capacity(size);
-        for id in 0..size {
-            let receiver = Arc::clone(&receiver);
-            workers.push(Worker::new(id, receiver));
-        }
-        Self { workers, sender }
-    }
+          let (sender, receiver) = mpsc::channel::<Job>();
 
-    pub fn excute<F>(&self, f: F)
-    where
-        F: FnOnce() -> () + Send + 'static,
-    {
-    }
-}
+          let receiver = Arc::new(Mutex::new(receiver));
+          let mut workers = Vec::with_capacity(size);
+          for id in 0..size {
+              let receiver = Arc::clone(&receiver);
+              workers.push(Worker::new(id, receiver));
+          }
+          Self { workers, sender }
+      }
 
-struct Worker {
-    id: usize,
-    thread: JoinHandle<()>,
-}
+      pub fn excute<F>(&self, f: F)
+      where
+          F: FnOnce() -> () + Send + 'static,
+      {
+      }
+  }
 
-impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> Self {
-        let thread = thread::spawn(|| {
-            receiver;
-        });
-        Self { id, thread }
-    }
-}
-```
+  struct Worker {
+      id: usize,
+      thread: JoinHandle<()>,
+  }
+
+  impl Worker {
+      fn new(id: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> Self {
+          let thread = thread::spawn(|| {
+              receiver;
+          });
+          Self { id, thread }
+      }
+  }
+  ```
 
 ### `excute` メソッドの実装
 
