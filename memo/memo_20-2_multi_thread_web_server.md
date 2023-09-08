@@ -493,5 +493,28 @@ impl ThreadPool {
 - これで、コード自体は完成する
   - 実行して、ためしに、<http://127.0.0.1:7878/sleep> へアクセスして、レスポンスを待っている間に <http://127.0.0.1:7878/> にアクセスすると、前者の画面表示を待たずに後者の画面が表示されることを確かめられる
 
-- なお、`Worker::new` 内のループを `while let` に置き換えたり、loop 内で `unwrap` の代わりに `if let` 式を用いるたりすると所有権の問題で上記のような期待通りの動作にならないので注意（２敗）
+- なお、`Worker::new` 内のループを `while let` に置き換えたり、loop 内で `unwrap` の代わりに `if let` 式を用いたりすると所有権の問題で期待通りの動作にならないので注意（２敗）
+  - ザックリいうと、`while let` や `if let` を用いると `job()` の完了まで 受信機の mutex がロックされたままになるような実装になるのて、他のスレッドが受信機にアクセスできなくなって並行処理がうまくいかない
   - 詳細については本文を熟読して理解すること
+
+```rs
+// --snip--
+
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+        let thread = thread::spawn(move || {
+            while let Ok(job) = receiver.lock().unwrap().recv() {
+                println!("Worker {} got a job; executing.", id);
+
+                job.call_box();
+                // この実装だと、ここ↓の `}` で drop されるまで mutex がロックされたままになる
+            }
+        });
+
+        Worker {
+            id,
+            thread,
+        }
+    }
+}
+```
